@@ -6,8 +6,6 @@
 # 📥️ Modulok behívása
 # ==============================================================================
 
-# 📥💿 Modul a winchester kiolvasáshoz
-import wmi
 
 #import pythoncom # Kelleni fog a WMI miatt a COM inicializáláshoz
 
@@ -15,6 +13,9 @@ import wmi
 from pywinauto.application import Application,WindowSpecification
 from pywinauto.findbestmatch import MatchError
 from pywinauto.findwindows import ElementNotFoundError
+
+# 📥💿 Modul a winchester kiolvasáshoz
+import wmi
 
 # 📥📂 Modul a log mentéséhez
 import os
@@ -60,16 +61,17 @@ sStrtTO=30 # Indulásra várakozás limitje (secundumban)
 # 🧬 Intervalum osztály
 @dataclass
 class oFigyel:
+    check: float = 1.5
     period: int = 30
-    length: float = 300.0
+    length: int = 300
 
-lFigyelő=[oFigyel(1,7) # 1s Kezdettől/Végétől vissza 7 másodperctől
-            ,oFigyel(5,15) # 5s Kezdettől/Végétől vissza 15 másodperctől
-            ,oFigyel(10,60) # 10s Kezdettől/Végétől vissza 1 percig
-            ,oFigyel(30,300) # fél percenként Kezdettől/Végétől vissza 5 percig
-            ,oFigyel(300,1200) # Kezdettől 5 percenként 20 percig
-            ,oFigyel(900,5400) # Kezdettől 15 percenként 1,5 óráig
-            ,oFigyel(3600,864000) # óránként 10 napig..
+lFigyelő=[oFigyel(0.1,1,7) # 1s Kezdettől/Végétől vissza 7 másodperctől
+            ,oFigyel(0.25,5,15) # 5s Kezdettől/Végétől vissza 15 másodperctől
+            ,oFigyel(0.5,10,60) # 10s Kezdettől/Végétől vissza 1 percig
+            ,oFigyel(1.5,30,300) # fél percenként Kezdettől/Végétől vissza 5 percig
+            ,oFigyel(15,300,1200) # Kezdettől 5 percenként 20 percig
+            ,oFigyel(45,900,5400) # Kezdettől 15 percenként 1,5 óráig
+            ,oFigyel(180,3600,864000) # óránként 10 napig..
             ]
 vFigyel=0 # 0 az első érték
 # Nagyon fontos! a pause, az
@@ -172,13 +174,21 @@ def gDiskProps():
                         ilSctN=DD.TotalSectors
                         iPDSN=DD.SerialNumber
                         iMdTp=DD.MediaType
+                        iIntTp=DD.InterfaceType
+                        iSct=int(PDisk.Size)//int(PDisk.LogicalSectorSize)
+            DDs=None
         if iMaxLSz==0:return "No drive"    
         prt={"S#":iPDSN, "ID":iLabel, "Drv":iDrLt, "Media":iMdTp, "Sct":ilSctN # pyright: ignore[reportPossiblyUnboundVariable]
-             , "BPSct":ilSctS,"Size":iMaxLSz,"Free":iFree} # pyright: ignore[reportPossiblyUnboundVariable]
+             , "BPSct":ilSctS,"Size":iMaxLSz,"Free":iFree,"IntTp":iIntTp,"FSct":iSct} # pyright: ignore[reportPossiblyUnboundVariable]
         return prt
     except Exception as e:
         return f"Kritikus hiba a WMI lekérdezés során: {e}"
-    #finally:
+    finally:
+        MSFT_PDs=None
+        if "WMIcm2" in locals():
+            del WMIcm2 # pyright: ignore[reportPossiblyUnboundVariable]
+        if "WMIstr" in locals():
+            del WMIstr # pyright: ignore[reportPossiblyUnboundVariable]
     #    # Kifejezetten elengedjük a COM-ot
     #    pythoncom.CoUninitialize()
             
@@ -198,14 +208,15 @@ def getwDiskFresh():
     """
     #global owDiskFresh, oLabel
     global owDiskFresh, oLabel
-    print(f"[{'INIT'.center(6)}] Keresés: '{wTitle}' ablak...")
+    #print(f"[{'INIT'.center(6)}] Keresés: '{wTitle}' ablak...")
 
     try:
         # Kapcsolódás a 'DiskFresh' ablakhoz címrészlet alapján
 
         #Debug
-        print('App_Tmp:',wTitle)
+        #print('App_Tmp:',wTitle)
         app = Application(backend="win32").connect(
+            # Ouch... ha fut, akkor wTitle nem jó... akkor a Refreshing-re kellene keresni
             title_re=f".*{wTitle}.*"
             ,class_name="#32770"
             #,path=r"C:\Program Files\DiskFresh\DiskFresh.exe"
@@ -254,7 +265,14 @@ def getLabelValue():
     kiolvassa és visszaadja az 1004-es Static vezérlő aktuális szövegét.
     """
     global oLabel
+    #global sStop
     vRes=""
+
+    def waitFn():
+        global sStop
+        nonlocal vRes
+        vRes=oLabel.window_text()
+        return sStop or vRes!=vText
     
     # 1. Ellenőrizzük, hogy inicializálva van-e a Static vezérlő
     if oLabel is None:
@@ -272,7 +290,8 @@ def getLabelValue():
             wait_until(
                 timeout=10 # a timeout változik a folyamattól függően.
                 , retry_interval=0.1
-                , func=lambda: (((vRes:=oLabel.window_text()) and 0) or vRes!= vText)
+                , func=waitFn
+                #, func=lambda: (((vRes:=oLabel.window_text()) and 0) or vRes!= vText)
                 #, func=lambda: vRes:=sStop or (oLabel.window_text() != vText)
             )            
             
@@ -298,13 +317,14 @@ def AktValues(sv): # sv: státusz sor szövege
     lSV=vSV.split()
 
     vDT=datetime.now()
-    if sv[-7:]=="TimeOut": # right(sv,7)="TimeOut"
+    if sv[-8:]==" TimeOut": # right(sv,7)="TimeOut"
+        sv=sv[:-8]
         vDT=vDT-timedelta(seconds=10) # 10 sec is the timeout        
     
     # Ha nem adat van, akkor a szöveget küldi vissza.
-    if len(lSV>3):
+    if len(lSV)>3:
         if lSV[0].isdigit() and lSV[3].isdigit():
-            return cLog(vDT,lSV[0],lSV[3])
+            return cLog(vDT,int(lSV[0]),int(lSV[3]))
         else:
             return sv
     else:
@@ -322,6 +342,21 @@ def AktValues(sv): # sv: státusz sor szövege
 def getAktVal():
     return AktValues(getLabelValue())
 
+def calcTimes(SV:cLog,pSV:cLog,tStart:datetime):
+    vTE=SV.TimeStamp-tStart # Eltelt idő
+    vDT=SV.TimeStamp-pSV.TimeStamp
+    vDS=SV.Akt-pSV.Akt
+    # Hátra lévő idő
+    vTH=(SV.length-SV.Akt)*vDT/vDS
+    vT=min(vTE,vTH).total_seconds()
+    vTpS=1024**2*vDT.total_seconds()/vDS
+    vSpT=84.375*vDS/(vDT.total_seconds()*(1024**2))
+    #vSpT=1.0/vTpS
+    vRes={"ElapsedTime":vTE,"ExpectedTime":vTH,"Far":vT
+          ,"DeltaTime":vDT,"DeltaSectors":vDS
+          ,"TpS":vTpS,"SpT":vSpT}
+    return vRes
+    pass
 
 # ==============================================================================
 # 💿🖋 Lemez frissítés Monitorozása
@@ -380,6 +415,7 @@ def getAktVal():
 # ==============================================================================
 
 def on_press(key: Union[Key, KeyCode, None]) -> None:
+    global sStop
     if key == Key.esc or (isinstance(key, KeyCode) and key.char!=None and key.char.lower() == 'q'):
         evPeriod.set() # Azonnal felébreszti a wait()-et
         sStop=True # Azonnal leállítja az wait_untilt.
@@ -387,6 +423,8 @@ def on_press(key: Union[Key, KeyCode, None]) -> None:
 
 # Fő program inicializálása
 def init():
+    global sStop
+    sStop=False
     global evPeriod
     evPeriod = threading.Event()
     global listener
@@ -400,12 +438,14 @@ def init():
 # Fő program blokk
 
 def main_process():
-    #vDP=gDiskProps()
-    vDP="Test"
+    vDP=gDiskProps()
+    #vDP="Test"
     print("Disk props:", vDP)
 
-    if not isinstance(vDP, list):
+    if not isinstance(vDP, dict):
+        print("vDP is not dict")
         return False
+    print("vDP arrived")
     #return
     # Mely adatok vannak meg,
     #  Illetve mely adatok lesznek meg,
@@ -448,8 +488,13 @@ def main_process():
 
     # Egyenlőre nem várunk, ha nem fut a program, kilépünk...
 
+    # debug
+    #print("Get_WinDiskFresh")
+
     if not getwDiskFresh():
+        #print("No DiskFresh launched") # Kiírja a rutin eleve
         return False
+    print("Hmmm")
 
     # Program inicializálva
     #  A ciklus jön, mely ellenőrzi a státus sor értékét, és logolja
@@ -460,31 +505,42 @@ def main_process():
     # hm.. Lehessen átkapcsolni a logolást, hogy ne a kezdéshez,
     #  hanem az órához igazodjon a mérés ütemezése.
 
-    sStop=False
+    #sStop=False
     tBegin="Not Running"
     tEnd="Finished" # Nem biztos, hogy ez a szöveg!
 
     
     global vFigyel
+    vStart=True
+    v_TimeSt=None # a sectorok mérésének kezdő indőpontja
+    v_pSV=None
     iTime=datetime.now()
     vHtr=0
     v_pSV=None
     
+    print("While")
     while not sStop:
         # logolás
         jTime=datetime.now()
         vSV=getAktVal()
+        print(vSV)
         if vSV==tBegin: # még nem indult el. Kell alapozni?
             # Olvasási Timeout átállítása nagyra, had várja míg elindul
+            print("Long wait")
             vFigyel=5 # 15p
         if vSV==tEnd: # elkészült, de teljesen
             break
         if isinstance(vSV, cLog): # adat!
-            print(vSV)
+            if vStart: 
+                vStart=False
             if vHtr<=0:
                 # Elérte a határidőt, logolni kellene
                 print(f"log: {vSV}")
                 iTime=datetime.now()
+            if vSV.Akt==0:
+                print("0. sector!")
+                v_TimeSt=vSV.TimeStamp
+                print(v_TimeSt)
                 
             # ha elötte "indult", akkor a timeout visszaállítása gyorsra.
             #  Ne várjon akármeddig, mert kell a rész adat is
@@ -496,20 +552,37 @@ def main_process():
             # a v_pSV tárolja az előző adatot.
             # Ebből kiszámolhatjuk az aktuális "sebességet", időt, stb.
 
-            if not v_pSV is None: # van előző érték, tudjuk számolni a sebességet.
+            if v_pSV != None: # van előző érték, tudjuk számolni a sebességet.
                 # kell a kezdési idő
-                # (vSV.TimeStamp-v_pSV.TimeStamp) st/r H/1-r H=st*(1-r)/r
+                # (vSV.TimeStamp-v_pSV.TimeStamp) st/r H/t-r H=st*(t-r)/r
                 # (vSv.Akt-v_pSV.Akt)
                 # H=(vSV.TimeStamp-v_pSV.TimeStamp)*(1/(vSv.Akt-v_pSV.Akt)-1)
                 # vVég=vSV.TimeStamp+H
                 # és kell a várható végső idő
+                print("Van előző vSV")
+                print("TS",v_TimeSt)
+                if v_TimeSt!=None: 
+                    dcSV=calcTimes(vSV,v_pSV,v_TimeSt)
+                    print("calc: ",dcSV)
+                    #vTE=vSV.TimeStamp-v_TimeSt # Eltelt idő
+                    #vDT=vSV.TimeStamp-v_pSV.TimeStamp
+                    #vDS=vSV.Akt-v_pSV.Akt
+                    ## Hátra lévő idő
+                    #vTH=(vSV.length-vSV.Akt)*vDT/vDS
+                    #vT=min(vTE,vTH)
+                    if vFigyel<6 and dcSV["Far"]>lFigyelő[vFigyel].length:
+                        vFigyel+=1
+                    elif vFigyel>0 and dcSV["Far"]<lFigyelő[vFigyel-1].length:
+                        vFigyel-=1
                 pass
             else: # Elvileg ez a kezdés... le kéne menteni...
                 # a kezdés idejét
                 # illetve logolni, hogy elkezdtük...
+                print("Nincs előző vSV")
                 iTime=datetime.now()
                 vFigyel=0
             
+            print("vSV mentés")
             v_pSV=replace(vSV)
             
             pass
@@ -518,11 +591,13 @@ def main_process():
         #  indulási állapotban várni 600-at (10p)
         #  Várni a periódus 20-adával,
         #  illetve ha a periódusig kevesebb az idő mint a huszada, akkor annyival.        
-        if evPeriod.wait(timeout=min(
-            lFigyelő[vFigyel].period # periódus idő
-            ,vHtr:=lFigyelő[vFigyel].length # várakozási idő (nagy periódus)
+        #if not vSV==tBegin
+        # Ejch... a lassu winyón kb 1 sec a változás... 
+        if (not vStart) and evPeriod.wait(timeout=min(
+            lFigyelő[vFigyel].period # ellenörző idő
+            ,vHtr:=lFigyelő[vFigyel].length # periódus idő
             -(jTime-iTime).total_seconds() # eddig eltelt másodpercek az előző esemény óta
-            )): # Vár periódus időt, de a hosszig.
+            )): # Vár ellenörző időt, de a periódusig.
             break # esemény kezelés gombnyomásra (most csak leáll)
         
                          
