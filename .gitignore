@@ -1,0 +1,23 @@
+# Python automatikusan generált fájlok (gyorsítótár)
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtuális környezet (ha használsz ilyet)
+venv/
+env/
+.env
+
+# VS Code specifikus beállítások
+.vscode/
+*.code-workspace
+
+# Operációs rendszer szemetei
+Thumbs.db
+.DS_Store
+
+# Ideiglenes vagy log fájlok
+*.log
+
+# saját jegyzeteim
+Jegyzetek/
