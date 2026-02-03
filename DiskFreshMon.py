@@ -807,3 +807,4 @@ if __name__ == "__main__":
         if "listener" in locals():
             listener.stop() # pyright: ignore[reportAttributeAccessIssue, reportUnboundVariable]
         time.sleep(1)
+
