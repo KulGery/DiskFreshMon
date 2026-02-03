@@ -68,7 +68,7 @@ class oFigyel:
     period: int = 30
     length: int = 300
 
-lFigyelő=[oFigyel(0.05,0.2,2) # legelején nagyon sűrűn nézzük!      # pyright: ignore[reportArgumentType]
+lFigyelő=[oFigyel(0,0,2) # legelején, legvégén mindent mérjünk!
             ,oFigyel(0.2,1,7) # 1s Kezdettől/Végétől vissza 7 másodperctől
             ,oFigyel(1,5,15) # 5s Kezdettől/Végétől vissza 15 másodperctől
             ,oFigyel(2,10,60) # 10s Kezdettől/Végétől vissza 1 percig
@@ -115,8 +115,8 @@ print(f"\nSzint: {vFigyel}\nCh: {lFigyelő[vFigyel].check} Pr: {lFigyelő[vFigye
 # 🧬 Log osztály
 @dataclass
 class cLog:
-    TimeStamp: datetime #= field(default_factory=datetime.now)
-    Akt: int = 0
+    TimeStamp: datetime=datetime.min #= field(default_factory=datetime.now)
+    Akt: int = -1
     length: int = -1 # Sectorok száma
 # sLogs=[oLog]
 
@@ -134,15 +134,18 @@ class cCalc:
     DeltaSectors: int=0
     TimePSectors: float=0
     SectorsPTime: float=0
+    def _strip_ms(self, td: timedelta) -> timedelta:
+        """Segédfüggvény a mikroszekundumok levágásához."""
+        return timedelta(seconds=int(td.total_seconds()))
     @property
-    def ElapsedTime(self) -> timedelta:
-        return self.ElapsedTimeu-timedelta(microseconds=self.ElapsedTimeu.microseconds)
+    def ElapsedTime(self) -> timedelta:        
+        return self._strip_ms(self.ElapsedTimeu)
     @property
     def ExpectedTime(self) -> timedelta:
-        return self.ExpectedTimeu-timedelta(microseconds=self.ExpectedTimeu.microseconds)
+        return self._strip_ms(self.ExpectedTimeu)
     @property
     def DeltaTime(self) -> timedelta:
-        return self.DeltaTimeu-timedelta(microseconds=self.DeltaTimeu.microseconds)
+        return self._strip_ms(self.DeltaTimeu)
     @property
     def ElapsedTimeS(self) -> float:
         return self.ElapsedTimeu.total_seconds()
@@ -212,16 +215,19 @@ class cDisk:
         return "\n".join(sorok)
 
 def gDiskProps():
+    #region Logika
     # lekérjük a lemez adatait: Gyáriszám, sectorokszáma, köteg cimkéje.
     # USB-re csatolt merevlemez adatait igyekszünk lekérni.
     #  Ha több van csatolva, akkor bajban vagyunk...
     #  Lehet paraméterezni is kellene? Ha van paraméter,
     #  akkor azt a drive-t olvassuk be.
     # Tehát nem a PenDrive-t
+    #endregion
     
-    # 🛠️ PARAMÉTEREK BEÁLLÍTÁSA
+    #region 🛠️ PARAMÉTEREK BEÁLLÍTÁSA
     # Ezek a paraméterek csak ehhez a funkcióhoz kellenek,
     #  ezért nem a fő paraméterek között vannak
+    #endregion
     cBUS_USB = 7
     nsStorage = 'root/Microsoft/Windows/Storage'
 
@@ -235,13 +241,13 @@ def gDiskProps():
         MSFT_PDs=WMIstr.MSFT_PhysicalDisk(BusType=cBUS_USB)
         if not MSFT_PDs:
             return "No USB Drives"
-        prt=None
+        #prt=None
         #iMaxPSz=0
         #iMaxLSz=0
         rDisk=cDisk()        
         for PDisk in MSFT_PDs:
             # print('Fnd:', PDisk)
-            v_PD_Name=PDisk.FriendlyName
+            #v_PD_Name=PDisk.FriendlyName
 
             sDrvID=getattr(PDisk,'DeviceID', None)
             if sDrvID is None: continue
@@ -435,37 +441,39 @@ def getAktVal():
 
 def calcTimes(SV:cLog,pSV:cLog,tStart:datetime):
     rCalc=cCalc()
-    rCalc.Percent=1.0*SV.Akt/SV.length # vPrc
-    rCalc.ElapsedTimeu=SV.TimeStamp-tStart # Eltelt idő vTE
-    rCalc.DeltaTimeu=SV.TimeStamp-pSV.TimeStamp # vDT
-    rCalc.DeltaSectors=SV.Akt-pSV.Akt # vDS
-    rCalc.TimeAktPrc=1.0*rCalc.DeltaTimeu/rCalc.ElapsedTimeu # Időköz jelenszázalék vDTvp
-    rCalc.SectorAktPrc=1.0*rCalc.DeltaSectors/SV.Akt # SV.Akt=vSE vDSvp
-    rCalc.TimeDPrc=rCalc.TimeAktPrc/rCalc.Percent # Jelen/percent=teljes vDTp
-    rCalc.SectorDPrc=1.0*rCalc.DeltaSectors/SV.length # Sectorköz százalék vDSp
-    # Hátra lévő idő
-    rCalc.ExpectedTimeu=(SV.length-SV.Akt)*rCalc.DeltaTimeu/rCalc.DeltaSectors # vTH
-    rCalc.Far=min(rCalc.ElapsedTimeS,rCalc.ExpectedTimeS) # vT
-    rCalc.TimePSectors=1024**2*rCalc.DeltaTimeS/rCalc.DeltaSectors # vTpS
-    vSpT=84.375*rCalc.DeltaSectors/(rCalc.DeltaTimeS*(1024**2))
-    #vSpT=1.0/vTpS
-    '''
-    vRes={"ElapsedTime":vTE-timedelta(microseconds=vTE.microseconds)
-          ,"ExpectedTime":vTH-timedelta(microseconds=vTH.microseconds)
-          ,"Far":vT # -microseconds, hogy tiszta legyen a kimenet
-          ,"DeltaTime":vDT
-          ,"DeltaSectors":vDS
-          ,"TpS":vTpS
-          ,"SpT":vSpT}
-    return vRes
-    '''
+    if SV.Akt!=-1 and pSV.Akt!=-1 and not tStart is None:
+        rCalc.Percent=1.0*SV.Akt/SV.length # vPrc
+        rCalc.ElapsedTimeu=SV.TimeStamp-tStart # Eltelt idő vTE
+        rCalc.DeltaTimeu=SV.TimeStamp-pSV.TimeStamp # vDT
+        rCalc.DeltaSectors=SV.Akt-pSV.Akt # vDS
+        rCalc.TimeAktPrc=1.0*rCalc.DeltaTimeu/rCalc.ElapsedTimeu # Időköz jelenszázalék vDTvp
+        rCalc.SectorAktPrc=1.0*rCalc.DeltaSectors/SV.Akt # SV.Akt=vSE vDSvp
+        rCalc.TimeDPrc=rCalc.TimeAktPrc/rCalc.Percent # Jelen/percent=teljes vDTp
+        rCalc.SectorDPrc=1.0*rCalc.DeltaSectors/SV.length # Sectorköz százalék vDSp
+        # Hátra lévő idő
+        rCalc.ExpectedTimeu=(SV.length-SV.Akt)*rCalc.DeltaTimeu/rCalc.DeltaSectors # vTH
+        rCalc.Far=min(rCalc.ElapsedTimeS,rCalc.ExpectedTimeS) # vT
+        rCalc.TimePSectors=1024**2*rCalc.DeltaTimeS/rCalc.DeltaSectors # vTpS
+        vSpT=84.375*rCalc.DeltaSectors/(rCalc.DeltaTimeS*(1024**2))
+        #vSpT=1.0/vTpS
+        '''
+        vRes={"ElapsedTime":vTE-timedelta(microseconds=vTE.microseconds)
+            ,"ExpectedTime":vTH-timedelta(microseconds=vTH.microseconds)
+            ,"Far":vT # -microseconds, hogy tiszta legyen a kimenet
+            ,"DeltaTime":vDT
+            ,"DeltaSectors":vDS
+            ,"TpS":vTpS
+            ,"SpT":vSpT}
+        return vRes
+        '''
     return rCalc
-    pass
+    pass # calcTimes
 
 # ==============================================================================
 # 💿🖋 Lemez frissítés Monitorozása
 # ==============================================================================
 
+#region Működés
 # Három lépés
 # Első, megvárni hogy el legyen indítva a frissítés.
 #  Itt lényeges az utolsó "üres" érték időpontja, ha a kezdeti érték nem nulla.
@@ -513,6 +521,7 @@ def calcTimes(SV:cLog,pSV:cLog,tStart:datetime):
 
 # Harmadik, lefutó ág
 #  Megáll, mikor már nem logot ad az értékelő
+#endregion
 
 # ==============================================================================
 # 🧐⌨
@@ -520,7 +529,7 @@ def calcTimes(SV:cLog,pSV:cLog,tStart:datetime):
 
 def on_press(key: Union[Key, KeyCode, None]) -> None:
     global sStop
-    if key == Key.esc or (isinstance(key, KeyCode) and key.char!=None and key.char.lower() == 'q'):
+    if key == Key.esc or (isinstance(key, KeyCode) and not key.char is None and key.char.lower() == 'q'):
         evPeriod.set() # Azonnal felébreszti a wait()-et
         sStop=True # Azonnal leállítja az wait_untilt.
         #return False
@@ -553,7 +562,8 @@ def main_process():
         print("Disk props:", vDP.s())
     #DBG print("vDP arrived")
     #return
-    # Mely adatok vannak meg,
+
+    #region Mely adatok vannak meg,
     #  Illetve mely adatok lesznek meg,
     #  Illetve mely adatokat logoljuk?
     #
@@ -587,12 +597,14 @@ def main_process():
     #  Várható teljes idő
     #  Várható idő az Elkészűlésre
     #  Hátralevő idő
+    #endregion
 
 
-    # Státusz bárt megkeresni a DiskFresh alkalmazáson.
+    #region Státusz bárt megkeresni a DiskFresh alkalmazáson.
     # ? Pontosabban megvárni, hogy meglegyen az alkalmazás...
 
     # Egyenlőre nem várunk, ha nem fut a program, kilépünk...
+    #endregion
 
     # debug
     #DBG print("Get_WinDiskFresh")
@@ -602,7 +614,7 @@ def main_process():
         return False
     #DBG print("Hmmm")
 
-    # Program inicializálva
+    #region Program inicializálva
     #  A ciklus jön, mely ellenőrzi a státus sor értékét, és logolja
     #  A program futása közben, bármikor ki lehessen lépni a Q, Esc billentyűkkel.
     #    A ciklustól függetlenül lehessen lőni logot.
@@ -610,6 +622,7 @@ def main_process():
     #       (pl. 05 kor indítottam a mérést, de egészkor akarom az órás logookat)
     # hm.. Lehessen átkapcsolni a logolást, hogy ne a kezdéshez,
     #  hanem az órához igazodjon a mérés ütemezése.
+    #endregion
 
     #sStop=False
     tBegin="Not Running"
@@ -617,43 +630,60 @@ def main_process():
 
     
     global vFigyel
-    vStart=True
+    #vStart=True
+    #!!! Nem vStart, hanem vState 
+    # 0-Start, 
+    # 1, begin measure, 
+    # 2 measure, 
+    # 3 final, 
+    # 4 stop
+    vState=0
     v_TimeSt=None # a sectorok mérésének kezdő indőpontja
-    v_pSV=None
     iTime=datetime.now()
     vHtr=0
-    v_pSV=None
+    vSVe=cLog()
     
     #DBG print("While")
+    # részletesen: file://./diskfreshmon.md#figyelő-ciklus
     while not sStop:
         # logolás
+        # Kell az aktuális idő
         jTime=datetime.now()
+        # és mért adat, mely akár 10 másodpercig is várhat
         vSV=getAktVal()
 
-        #DBG
+        #region DBG vSV.pr
         if isinstance(vSV, cLog):
             print(f" 👓︎ Figyelt: {vSV.TimeStamp.__format__("%y%m%d_%H%M%S")} Akt: {vSV.Akt} Full: {vSV.length}")
         else:
             print(f" 👓︎ Figyelt:  {vSV}") #,vSV)
+        #endregion
 
+        '''
         if vSV==tBegin: # még nem indult el. Kell alapozni?
             # Olvasási Timeout átállítása nagyra, had várja míg elindul
             #DBG print("Long wait")
-            vFigyel=5 # 15p
-            print(f"\nSzint: {vFigyel}\nCh: {lFigyelő[vFigyel].check} Pr: {lFigyelő[vFigyel].period} Ln: {lFigyelő[vFigyel].length}")
+            #vFigyel=4 # 15p
+            #print(f"\nSzint: {vFigyel}\nCh: {lFigyelő[vFigyel].check} Pr: {lFigyelő[vFigyel].period} Ln: {lFigyelő[vFigyel].length}")
+            pass
+        '''
         if vSV==tEnd: # elkészült, de teljesen
+            #hmm úgy tűnik, a végén üres szöveget ad a státuszsor
             break
         if isinstance(vSV, cLog): # adat!
-            if vStart: 
-                vStart=False
+            #if vStart: # léptetni az állapotjelzőt
+            #    vStart=False
+            if vState==0: # léptetni az állapotjelzőt
+                vState=1 # Begin Measure
+                # akkor lesz 2-ő, ha már van előző érték is.
+                # Vagy ha megjött a 0.szektor?
+            # Nem itt kellene a határértéket ellenőrizni, mert azt az előzőből számoltuk
+            '''
             if vHtr<=0:
                 # Elérte a határidőt, logolni kellene
                 print(f"\nlog: TS: {vSV.TimeStamp:%y-%m-%d %H:%M:%S.%f} Akt.: {vSV.Akt:_} Telj.: {vSV.length:_}\n")
                 iTime=datetime.now()
-            if vSV.Akt==0:
-                print("0. sector!")
-                v_TimeSt=vSV.TimeStamp
-                print("Kezdés: {v_TimeSt}")
+            '''
                 
             # ha elötte "indult", akkor a timeout visszaállítása gyorsra.
             #  Ne várjon akármeddig, mert kell a rész adat is
@@ -662,24 +692,47 @@ def main_process():
             # Ellenőrizni kell a folyamat helyzetét, és ha szükséges váltani a
             #  Mélységet
 
-            # a v_pSV tárolja az előző adatot.
+            # a vSVe tárolja az előző adatot.
             # Ebből kiszámolhatjuk az aktuális "sebességet", időt, stb.
 
-            if v_pSV != None: # van előző érték, tudjuk számolni a sebességet.
-                # kell a kezdési idő
-                # (vSV.TimeStamp-v_pSV.TimeStamp) st/r H/t-r H=st*(t-r)/r
-                # (vSv.Akt-v_pSV.Akt)
-                # H=(vSV.TimeStamp-v_pSV.TimeStamp)*(1/(vSv.Akt-v_pSV.Akt)-1)
-                # vVég=vSV.TimeStamp+H
-                # és kell a várható végső idő
-                #DBG print("Van előző vSV")
-                #DBG print("TS",v_TimeSt)
-                if v_TimeSt!=None: 
-                    dcSV=calcTimes(vSV,v_pSV,v_TimeSt)
+            if (vSVe.Akt!=-1) or (vSV.Akt!=vSVe.Akt): # van előző érték, tudjuk számolni a sebességet.
+                if vSVe.Akt==-1: 
+                    # Elvileg ez a kezdés... le kéne menteni...
+                    # a kezdés idejét
+                    # illetve logolni, hogy elkezdtük...
+                    # akkor most itt, vagy vSV.Akt=0 a kezdés?
+                    # DBG pr
+                    print("Nincs előző vSV")                    
+                    vFigyel=0 # nagyon figyeljünk, mikor jön következő érték!
+                    print(f"\nSzint: {vFigyel}\nCh: {lFigyelő[vFigyel].check} Pr: {lFigyelő[vFigyel].period} Ln: {lFigyelő[vFigyel].length}")
+                    if vSV.Akt==0: # nem csak hogy van adat, de ez az nulladik szektor.
+                        print("0. sector!") #Dbg
+                        
+                        v_TimeSt=vSV.TimeStamp # Az kezddet időpontja
+                        iTime=v_TimeSt # a periódus kezdeti idejét beállítjuk
+                        print("Kezdés: ",v_TimeSt) #Dbg
+                        # ekkor még nincs előző adat!
+                        # logolást ne felejtsük!
+                        pass # 0. szektor!
+                    # Figyelem! ha az első adat nem 0, akkor el sem tudunk indulni!
+                    pass # nincs előző érték
+                elif not v_TimeSt is None: # ha megvan a kezdés időpontja és van előző adat
+                    if vState==1:
+                        vState=2
+                    # van előző érték, tudjuk számolni a sebességet.
+                    # kell a kezdési idő
+                    # (vSV.TimeStamp-vSVe.TimeStamp) st/r H/t-r H=st*(t-r)/r
+                    # (vSv.Akt-vSVe.Akt)
+                    # H=(vSV.TimeStamp-vSVe.TimeStamp)*(1/(vSv.Akt-vSVe.Akt)-1)
+                    # vVég=vSV.TimeStamp+H
+                    # és kell a várható végső idő
+                    #DBG print("Van előző vSV")
+                    #DBG print("TS",v_TimeSt)
+                    dcSV:cCalc=calcTimes(vSV,vSVe,v_TimeSt)
                     print(f" 🧐➗ calc: %: {dcSV.Percent:.1f} eddig: {dcSV.ElapsedTime} hátra:{dcSV.ExpectedTime} Sebesség:{dcSV.SectorsPTime:.2f}")
                     #vTE=vSV.TimeStamp-v_TimeSt # Eltelt idő
-                    #vDT=vSV.TimeStamp-v_pSV.TimeStamp
-                    #vDS=vSV.Akt-v_pSV.Akt
+                    #vDT=vSV.TimeStamp-vSVe.TimeStamp
+                    #vDS=vSV.Akt-vSVe.Akt
                     ## Hátra lévő idő
                     #vTH=(vSV.length-vSV.Akt)*vDT/vDS
                     #vT=min(vTE,vTH)
@@ -689,38 +742,55 @@ def main_process():
                     elif vFigyel>0 and dcSV.Far<lFigyelő[vFigyel-1].length:
                         vFigyel-=1
                         print(f"\nSzint: {vFigyel}\nCh: {lFigyelő[vFigyel].check} Pr: {lFigyelő[vFigyel].period} Ln: {lFigyelő[vFigyel].length}")
-                pass
-            else: # Elvileg ez a kezdés... le kéne menteni...
-                # a kezdés idejét
-                # illetve logolni, hogy elkezdtük...
-                print("Nincs előző vSV")
-                iTime=datetime.now()
-                vFigyel=0
-                print(f"\nSzint: {vFigyel}\nCh: {lFigyelő[vFigyel].check} Pr: {lFigyelő[vFigyel].period} Ln: {lFigyelő[vFigyel].length}")
+                    vHtr=(lFigyelő[vFigyel].period # periódus idő
+                        -(iTime-datetime.now()).total_seconds()) # letelt idő
+                    #iTime+lFigyelő[vFigyel].period: Periódus lejárta
+                    if vHtr<=0: # ha lejárt, akkor logolunk
+                        print(f"\nlog: TS: {vSV.TimeStamp:%y-%m-%d %H:%M:%S.%f} Akt.: {vSV.Akt:_} Telj.: {vSV.length:_}\n")
+                        vHtr=lFigyelő[vFigyel].period
+                        iTime=datetime.now()
+                        # vagy v_TimeSt-tól számított periódus idő mostanig
+                        # iTime=v_TimeSt+timedelta(seconds=(datetime.now()-v_TimeSt).total_seconds()//vHtr*vHtr)
+                        # vagy éjféltől számított
+                        #iTime=timedelta(seconds=((n:=datetime.now())-(m:=n.replace(hour=0, minute=0,second=0,microsecond=0))).total_seconds()//vHtr*vHtr)+m
+                        '''
+                        n=datetime.now() # Most
+                        m=n.replace(hour=0, minute=0,second=0,microsecond=0) # éjfél
+                        iTime=m+timedelta(seconds=((n-m).total_seconds()//vHtr*vHtr)) # éjfél + másodpercek perióduskezdetig
+                        '''
+                        pass # periódus lejárt
+
+
+
+                    print(f"Várakozás: {min(
+                        lFigyelő[vFigyel].check # ellenörző idő
+                        ,vHtr)}") # Periódus időig hátra levő idő
+                    if vHtr>0.1: # csak akkor várjunk, ha van mit várni
+                        if evPeriod.wait(timeout=min(
+
+                            lFigyelő[vFigyel].check # ellenörző idő
+                            ,vHtr # Periódus időig hátra levő idő
+
+                            )): # Vár ellenörzés időt, de a periódusig.
+                            break # esemény kezelés gombnyomásra (most csak leáll)
+
+                    pass # van előző adat! ki: dcSV!! statisztika
+
+                #DBG print("vSV mentés")
+                #vSVe=replace(vSV)
+                vSVe=vSV # elég átcimkézni, mert vSV új objektumot kap.
+
+                pass # van új adat
             
-            #DBG print("vSV mentés")
-            v_pSV=replace(vSV)
-            
-            pass
+            pass # Adat!
         
         # itt a folyamat mélységétől függ, meddig várjon.
         #  indulási állapotban várni 600-at (10p)
         #  Várni a periódus 20-adával,
-        #  illetve ha a periódusig kevesebb az idő mint a huszada, akkor annyival.        
+        #  illetve ha a periódusig kevesebb az idő mint a huszada, akkor annyival.
+        # Csak, de csak akkor várjunk hosszan, ha nem kell az indulásra figyelnünk!
         #if not vSV==tBegin
         # Ejch... a lassu winyón kb 1 sec a változás... 
-        print(f"Várakozás: {min(
-            lFigyelő[vFigyel].check # ellenörző idő
-            ,lFigyelő[vFigyel].period # periódus idő
-            -(jTime-iTime).total_seconds() # eddig eltelt másodpercek az előző esemény óta
-            )}")
-        if (not vStart) and evPeriod.wait(timeout=min(
-            lFigyelő[vFigyel].check # ellenörző idő
-            ,lFigyelő[vFigyel].period # periódus idő            
-            -(jTime-iTime).total_seconds() # eddig eltelt másodpercek az előző esemény óta
-            )): # Vár ellenörző időt, de a periódusig.
-            break # esemény kezelés gombnyomásra (most csak leáll)
-                                
         pass
 
 
