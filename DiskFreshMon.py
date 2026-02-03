@@ -25,7 +25,7 @@ import time
 
 # 📥⏱ Modul az időzítéshez
 from pywinauto.timings import TimeoutError, wait_until
-from dataclasses import dataclass,replace
+from dataclasses import dataclass,replace,fields
 
 # 📥⌨
 from pynput.keyboard import Key,KeyCode, Listener
@@ -68,16 +68,18 @@ class oFigyel:
     period: int = 30
     length: int = 300
 
-lFigyelő=[oFigyel(0.1,1,7) # 1s Kezdettől/Végétől vissza 7 másodperctől
-            ,oFigyel(0.25,5,15) # 5s Kezdettől/Végétől vissza 15 másodperctől
-            ,oFigyel(0.5,10,60) # 10s Kezdettől/Végétől vissza 1 percig
-            ,oFigyel(1.5,30,300) # fél percenként Kezdettől/Végétől vissza 5 percig
-            ,oFigyel(15,300,1200) # Kezdettől 5 percenként 20 percig
-            ,oFigyel(45,900,5400) # Kezdettől 15 percenként 1,5 óráig
-            ,oFigyel(180,3600,864000) # óránként 10 napig..
+lFigyelő=[oFigyel(0.05,0.2,2) # legelején nagyon sűrűn nézzük!      # pyright: ignore[reportArgumentType]
+            ,oFigyel(0.2,1,7) # 1s Kezdettől/Végétől vissza 7 másodperctől
+            ,oFigyel(1,5,15) # 5s Kezdettől/Végétől vissza 15 másodperctől
+            ,oFigyel(2,10,60) # 10s Kezdettől/Végétől vissza 1 percig
+            ,oFigyel(6,30,300) # fél percenként Kezdettől/Végétől vissza 5 percig
+            ,oFigyel(60,300,1200) # Kezdettől 5 percenként 20 percig
+            ,oFigyel(180,900,5400) # Kezdettől 15 percenként 1,5 óráig
+            ,oFigyel(720,3600,864000) # óránként 10 napig..
             ]
+lFigyelőc=len(lFigyelő) #Figyelő lista darabszáma
 vFigyel=0 # 0 az első érték
-print(f"\nSzint: {vFigyel}\n")
+print(f"\nSzint: {vFigyel}\nCh: {lFigyelő[vFigyel].check} Pr: {lFigyelő[vFigyel].period} Ln: {lFigyelő[vFigyel].length}")
 # Nagyon fontos! a pause, az
 #  vagy 0,1-s onként fut de végig
 #   (ez óránkénti naplózásnál igen felesleges 36000 UI lekérés és számolás)
@@ -118,14 +120,96 @@ class cLog:
     length: int = -1 # Sectorok száma
 # sLogs=[oLog]
 
+@dataclass
+class cCalc:
+    Percent: float =0
+    TimeAktPrc: float=0
+    SectorAktPrc: float=0
+    TimeDPrc: float=0
+    SectorDPrc: float=0
+    ElapsedTimeu: timedelta=timedelta(0)
+    ExpectedTimeu: timedelta=timedelta(0)
+    Far: float=0
+    DeltaTimeu: timedelta=timedelta(0)
+    DeltaSectors: int=0
+    TimePSectors: float=0
+    SectorsPTime: float=0
+    @property
+    def ElapsedTime(self) -> timedelta:
+        return self.ElapsedTimeu-timedelta(microseconds=self.ElapsedTimeu.microseconds)
+    @property
+    def ExpectedTime(self) -> timedelta:
+        return self.ExpectedTimeu-timedelta(microseconds=self.ExpectedTimeu.microseconds)
+    @property
+    def DeltaTime(self) -> timedelta:
+        return self.DeltaTimeu-timedelta(microseconds=self.DeltaTimeu.microseconds)
+    @property
+    def ElapsedTimeS(self) -> float:
+        return self.ElapsedTimeu.total_seconds()
+    @property
+    def ExpectedTimeS(self) -> float:
+        return self.ExpectedTimeu.total_seconds()
+    @property
+    def DeltaTimeS(self) -> float:
+        return self.DeltaTimeu.total_seconds()
+
 listener: Listener
 
 # ==============================================================================
 # 💿️ Lemez kezelő eljárások
 # ==============================================================================
+
+def BytesX(size):
+    # 2**10 = 1024
+    power = 2**10
+    n = 0
+    power_labels = {0 : '', 1: 'kilo', 2: 'mega', 3: 'giga', 4: 'tera'}
+    pls={0 : 'B', 1: 'KB', 2: 'MB', 3: 'GB', 4: 'TB'}
+    while size > power:
+        size /= power
+        n += 1
+    return size, power_labels[n]+'bytes', pls[n], n
+def BytesS(size):
+    a,b,c,d=BytesX(size)
+    return f"{a:.2f} {c}"
+
 # ==============================================================================
 # 💿💬 Lemez cimke, S# olvasás
 # ==============================================================================
+
+@dataclass
+class cDisk:
+    SN: str=""
+    ID: str=""
+    Drive: str=""
+    Media: str=""
+    SectorsOfDisk: int=0
+    SectorsOfPrt: int=0
+    BytesPSector: int=0
+    Size: int=0
+    Free: int=0
+    IntTyp: str=""
+    _ByteFields={'Size','Free'}
+    def s(self) -> str:
+        sorok=["--- Disk Adatlap --- "]
+        elv={' ',',','.',';','_','-'} # elválasztók
+
+        for field in fields(self):
+            ertek=getattr(self,field.name)
+
+            if isinstance(ertek,str):
+                VnElv = bool(set(ertek) & elv)
+                if len(ertek) > 8 and not VnElv:
+                    ertek = " ".join([ertek[i:i+4] for i in range(0, len(ertek), 4)])
+                pass
+            if isinstance(ertek,(int,float)): # float esetében kerekítés átgondolandó
+                if field.name in self._ByteFields:
+                    ertek=BytesS(ertek)
+                else:
+                    ertek = f"{ertek:_}".replace("_", " ")
+                pass
+            sorok.append(f"{field.name:<20}: {ertek}")
+        return "\n".join(sorok)
 
 def gDiskProps():
     # lekérjük a lemez adatait: Gyáriszám, sectorokszáma, köteg cimkéje.
@@ -153,7 +237,8 @@ def gDiskProps():
             return "No USB Drives"
         prt=None
         #iMaxPSz=0
-        iMaxLSz=0
+        #iMaxLSz=0
+        rDisk=cDisk()        
         for PDisk in MSFT_PDs:
             # print('Fnd:', PDisk)
             v_PD_Name=PDisk.FriendlyName
@@ -169,22 +254,22 @@ def gDiskProps():
                 #if iMaxSz<DP.Size:
                 #    iMaxSz=DP.Size
                 for DL in DP.associators(wmi_result_class="Win32_LogicalDisk"):
-                    if iMaxLSz<int(DL.Size):
-                        iMaxLSz=DL.Size
-                        iFree=DL.FreeSpace
-                        iLabel=DL.VolumeName
-                        iDrLt=DL.Caption
-                        ilSctS=DD.BytesPerSector                        
-                        ilSctN=DD.TotalSectors
-                        iPDSN=DD.SerialNumber
-                        iMdTp=DD.MediaType
-                        iIntTp=DD.InterfaceType
-                        iSct=int(PDisk.Size)//int(PDisk.LogicalSectorSize)
+                    if rDisk.Size<int(DL.Size):
+                        rDisk.Size=DL.Size
+                        rDisk.Free=DL.FreeSpace
+                        rDisk.ID=DL.VolumeName
+                        rDisk.Drive=DL.Caption
+                        rDisk.BytesPSector=DD.BytesPerSector                        
+                        rDisk.SectorsOfPrt=DD.TotalSectors
+                        rDisk.SN=DD.SerialNumber
+                        rDisk.Media=DD.MediaType
+                        rDisk.IntTyp=DD.InterfaceType
+                        rDisk.SectorsOfDisk=int(PDisk.Size)//int(PDisk.LogicalSectorSize)
             DDs=None
-        if iMaxLSz==0:return "No drive"    
-        prt={"S#":iPDSN, "ID":iLabel, "Drv":iDrLt, "Media":iMdTp, "Sct":ilSctN # pyright: ignore[reportPossiblyUnboundVariable]
-             , "BPSct":ilSctS,"Size":iMaxLSz,"Free":iFree,"IntTp":iIntTp,"FSct":iSct} # pyright: ignore[reportPossiblyUnboundVariable]
-        return prt
+        if rDisk.Size==0:return "No drive"    
+        #prt={"S#":iPDSN, "ID":iLabel, "Drv":iDrLt, "Media":iMdTp, "Sct":ilSctN # pyright: ignore[reportPossiblyUnboundVariable]
+        #     , "BPSct":ilSctS,"Size":iMaxLSz,"Free":iFree,"IntTp":iIntTp,"FSct":iSct} # pyright: ignore[reportPossiblyUnboundVariable]
+        return rDisk
     except Exception as e:
         return f"Kritikus hiba a WMI lekérdezés során: {e}"
     finally:
@@ -349,19 +434,32 @@ def getAktVal():
     return AktValues(getLabelValue())
 
 def calcTimes(SV:cLog,pSV:cLog,tStart:datetime):
-    vTE=SV.TimeStamp-tStart # Eltelt idő
-    vDT=SV.TimeStamp-pSV.TimeStamp
-    vDS=SV.Akt-pSV.Akt
+    rCalc=cCalc()
+    rCalc.Percent=1.0*SV.Akt/SV.length # vPrc
+    rCalc.ElapsedTimeu=SV.TimeStamp-tStart # Eltelt idő vTE
+    rCalc.DeltaTimeu=SV.TimeStamp-pSV.TimeStamp # vDT
+    rCalc.DeltaSectors=SV.Akt-pSV.Akt # vDS
+    rCalc.TimeAktPrc=1.0*rCalc.DeltaTimeu/rCalc.ElapsedTimeu # Időköz jelenszázalék vDTvp
+    rCalc.SectorAktPrc=1.0*rCalc.DeltaSectors/SV.Akt # SV.Akt=vSE vDSvp
+    rCalc.TimeDPrc=rCalc.TimeAktPrc/rCalc.Percent # Jelen/percent=teljes vDTp
+    rCalc.SectorDPrc=1.0*rCalc.DeltaSectors/SV.length # Sectorköz százalék vDSp
     # Hátra lévő idő
-    vTH=(SV.length-SV.Akt)*vDT/vDS
-    vT=min(vTE,vTH).total_seconds()
-    vTpS=1024**2*vDT.total_seconds()/vDS
-    vSpT=84.375*vDS/(vDT.total_seconds()*(1024**2))
+    rCalc.ExpectedTimeu=(SV.length-SV.Akt)*rCalc.DeltaTimeu/rCalc.DeltaSectors # vTH
+    rCalc.Far=min(rCalc.ElapsedTimeS,rCalc.ExpectedTimeS) # vT
+    rCalc.TimePSectors=1024**2*rCalc.DeltaTimeS/rCalc.DeltaSectors # vTpS
+    vSpT=84.375*rCalc.DeltaSectors/(rCalc.DeltaTimeS*(1024**2))
     #vSpT=1.0/vTpS
-    vRes={"ElapsedTime":vTE-timedelta(microseconds=vTE.microseconds),"ExpectedTime":vTH-timedelta(microseconds=vTH.microseconds),"Far":vT # -microseconds, hogy tiszta legyen a kimenet
-          ,"DeltaTime":vDT,"DeltaSectors":vDS
-          ,"TpS":vTpS,"SpT":vSpT}
+    '''
+    vRes={"ElapsedTime":vTE-timedelta(microseconds=vTE.microseconds)
+          ,"ExpectedTime":vTH-timedelta(microseconds=vTH.microseconds)
+          ,"Far":vT # -microseconds, hogy tiszta legyen a kimenet
+          ,"DeltaTime":vDT
+          ,"DeltaSectors":vDS
+          ,"TpS":vTpS
+          ,"SpT":vSpT}
     return vRes
+    '''
+    return rCalc
     pass
 
 # ==============================================================================
@@ -446,11 +544,13 @@ def init():
 def main_process():
     vDP=gDiskProps()
     #vDP="Test"
-    print("Disk props:", vDP)
 
-    if not isinstance(vDP, dict):
-        print(" ❌ vDP is not dict")
+    if not isinstance(vDP, cDisk):
+        print("Disk props:", vDP)
+        print(" ❌ vDP is not cDisk")
         return False
+    else:
+        print("Disk props:", vDP.s())
     #DBG print("vDP arrived")
     #return
     # Mely adatok vannak meg,
@@ -532,7 +632,7 @@ def main_process():
 
         #DBG
         if isinstance(vSV, cLog):
-            print(f" 👓︎ Figyelt: {vSV.TimeStamp.__format__("%y%m%d_%H%M")} Akt: {vSV.Akt} Full: {vSV.length}")
+            print(f" 👓︎ Figyelt: {vSV.TimeStamp.__format__("%y%m%d_%H%M%S")} Akt: {vSV.Akt} Full: {vSV.length}")
         else:
             print(f" 👓︎ Figyelt:  {vSV}") #,vSV)
 
@@ -540,7 +640,7 @@ def main_process():
             # Olvasási Timeout átállítása nagyra, had várja míg elindul
             #DBG print("Long wait")
             vFigyel=5 # 15p
-            print(f"\nSzint: {vFigyel}\n")
+            print(f"\nSzint: {vFigyel}\nCh: {lFigyelő[vFigyel].check} Pr: {lFigyelő[vFigyel].period} Ln: {lFigyelő[vFigyel].length}")
         if vSV==tEnd: # elkészült, de teljesen
             break
         if isinstance(vSV, cLog): # adat!
@@ -548,7 +648,7 @@ def main_process():
                 vStart=False
             if vHtr<=0:
                 # Elérte a határidőt, logolni kellene
-                print(f"\nlog: {vSV}\n")
+                print(f"\nlog: TS: {vSV.TimeStamp:%y-%m-%d %H:%M:%S.%f} Akt.: {vSV.Akt:_} Telj.: {vSV.length:_}\n")
                 iTime=datetime.now()
             if vSV.Akt==0:
                 print("0. sector!")
@@ -576,19 +676,19 @@ def main_process():
                 #DBG print("TS",v_TimeSt)
                 if v_TimeSt!=None: 
                     dcSV=calcTimes(vSV,v_pSV,v_TimeSt)
-                    print(f" 🧐➗ calc: eddig: {dcSV['ElapsedTime']} hátra:{dcSV['ExpectedTime']} Sebesség:{dcSV['SpT']}")
+                    print(f" 🧐➗ calc: %: {dcSV.Percent:.1f} eddig: {dcSV.ElapsedTime} hátra:{dcSV.ExpectedTime} Sebesség:{dcSV.SectorsPTime:.2f}")
                     #vTE=vSV.TimeStamp-v_TimeSt # Eltelt idő
                     #vDT=vSV.TimeStamp-v_pSV.TimeStamp
                     #vDS=vSV.Akt-v_pSV.Akt
                     ## Hátra lévő idő
                     #vTH=(vSV.length-vSV.Akt)*vDT/vDS
                     #vT=min(vTE,vTH)
-                    if vFigyel<6 and dcSV["Far"]>lFigyelő[vFigyel].length:
+                    if vFigyel+1<lFigyelőc and dcSV.Far>lFigyelő[vFigyel].length:
                         vFigyel+=1
-                        print(f"\nSzint: {vFigyel}\n")
-                    elif vFigyel>0 and dcSV["Far"]<lFigyelő[vFigyel-1].length:
+                        print(f"\nSzint: {vFigyel}\nCh: {lFigyelő[vFigyel].check} Pr: {lFigyelő[vFigyel].period} Ln: {lFigyelő[vFigyel].length}")
+                    elif vFigyel>0 and dcSV.Far<lFigyelő[vFigyel-1].length:
                         vFigyel-=1
-                        print(f"\nSzint: {vFigyel}\n")
+                        print(f"\nSzint: {vFigyel}\nCh: {lFigyelő[vFigyel].check} Pr: {lFigyelő[vFigyel].period} Ln: {lFigyelő[vFigyel].length}")
                 pass
             else: # Elvileg ez a kezdés... le kéne menteni...
                 # a kezdés idejét
@@ -596,7 +696,7 @@ def main_process():
                 print("Nincs előző vSV")
                 iTime=datetime.now()
                 vFigyel=0
-                print(f"\nSzint: {vFigyel}\n")
+                print(f"\nSzint: {vFigyel}\nCh: {lFigyelő[vFigyel].check} Pr: {lFigyelő[vFigyel].period} Ln: {lFigyelő[vFigyel].length}")
             
             #DBG print("vSV mentés")
             v_pSV=replace(vSV)
@@ -609,14 +709,18 @@ def main_process():
         #  illetve ha a periódusig kevesebb az idő mint a huszada, akkor annyival.        
         #if not vSV==tBegin
         # Ejch... a lassu winyón kb 1 sec a változás... 
+        print(f"Várakozás: {min(
+            lFigyelő[vFigyel].check # ellenörző idő
+            ,lFigyelő[vFigyel].period # periódus idő
+            -(jTime-iTime).total_seconds() # eddig eltelt másodpercek az előző esemény óta
+            )}")
         if (not vStart) and evPeriod.wait(timeout=min(
-            lFigyelő[vFigyel].period # ellenörző idő
-            ,vHtr:=lFigyelő[vFigyel].length # periódus idő
+            lFigyelő[vFigyel].check # ellenörző idő
+            ,lFigyelő[vFigyel].period # periódus idő            
             -(jTime-iTime).total_seconds() # eddig eltelt másodpercek az előző esemény óta
             )): # Vár ellenörző időt, de a periódusig.
             break # esemény kezelés gombnyomásra (most csak leáll)
-        
-                         
+                                
         pass
 
 
