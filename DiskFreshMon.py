@@ -659,7 +659,7 @@ def main_process():
             print(f" 👓︎ Figyelt:  {vSV}") #,vSV)
         #endregion
 
-        '''
+        ''' removed lines TBegin
         if vSV==tBegin: # még nem indult el. Kell alapozni?
             # Olvasási Timeout átállítása nagyra, had várja míg elindul
             #DBG print("Long wait")
@@ -695,7 +695,7 @@ def main_process():
             # a vSVe tárolja az előző adatot.
             # Ebből kiszámolhatjuk az aktuális "sebességet", időt, stb.
 
-            if (vSVe.Akt!=-1) or (vSV.Akt!=vSVe.Akt): # van előző érték, tudjuk számolni a sebességet.
+            if (vSVe.Akt==-1) or (vSV.Akt!=vSVe.Akt): # van előző érték, tudjuk számolni a sebességet.
                 if vSVe.Akt==-1: 
                     # Elvileg ez a kezdés... le kéne menteni...
                     # a kezdés idejét
@@ -743,7 +743,7 @@ def main_process():
                         vFigyel-=1
                         print(f"\nSzint: {vFigyel}\nCh: {lFigyelő[vFigyel].check} Pr: {lFigyelő[vFigyel].period} Ln: {lFigyelő[vFigyel].length}")
                     vHtr=(lFigyelő[vFigyel].period # periódus idő
-                        -(iTime-datetime.now()).total_seconds()) # letelt idő
+                        -(datetime.now()-iTime).total_seconds()) # letelt idő
                     #iTime+lFigyelő[vFigyel].period: Periódus lejárta
                     if vHtr<=0: # ha lejárt, akkor logolunk
                         print(f"\nlog: TS: {vSV.TimeStamp:%y-%m-%d %H:%M:%S.%f} Akt.: {vSV.Akt:_} Telj.: {vSV.length:_}\n")
