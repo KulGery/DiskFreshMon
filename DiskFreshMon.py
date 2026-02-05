@@ -28,7 +28,21 @@ from pywinauto.timings import TimeoutError, wait_until
 from dataclasses import dataclass,replace,fields
 
 # 📥⌨
-from pynput.keyboard import Key,KeyCode, Listener
+#from pynput.keyboard import Key,KeyCode, Listener
+#region tkinter
+'''
+import tkinter as tk
+
+def on_key(event):
+    print(f"Gomb: {event.keysym}")
+
+root = tk.Tk()
+root.bind("<Key>", on_key) # Csak ha az ablak aktív!
+root.mainloop()
+'''
+#endregion
+import msvcrt
+
 
 # 📥📝 Modul a logoláshoz
 from datetime import datetime,timedelta
@@ -155,8 +169,13 @@ class cCalc:
     @property
     def DeltaTimeS(self) -> float:
         return self.DeltaTimeu.total_seconds()
+    @property
+    def PercentS(self) -> str:
+        return (f"{self.Percent*100}%")
 
-listener: Listener
+#listener: Listener
+
+lstKbrd: threading.Thread|None=None
 
 # ==============================================================================
 # 💿️ Lemez kezelő eljárások
@@ -526,26 +545,45 @@ def calcTimes(SV:cLog,pSV:cLog,tStart:datetime):
 # ==============================================================================
 # 🧐⌨
 # ==============================================================================
-
+''' on_press
 def on_press(key: Union[Key, KeyCode, None]) -> None:
     global sStop
     if key == Key.esc or (isinstance(key, KeyCode) and not key.char is None and key.char.lower() == 'q'):
-        evPeriod.set() # Azonnal felébreszti a wait()-et
+        evWait.set() # Azonnal felébreszti a wait()-et
         sStop=True # Azonnal leállítja az wait_untilt.
         #return False
+'''
+
+def lstKey():
+    while not evWait.is_set():
+        if msvcrt.kbhit():
+            key=msvcrt.getch()            
+            if ((key==b'\x1b')
+             or (key=='q')):
+                sStop=1
+                evWait.set()            
+                break # Esc kilép a programból!
+        evWait.wait(0.1)
+        pass    
+    pass
 
 # Fő program inicializálása
 def init():
     global sStop
     sStop=False
-    global evPeriod
-    evPeriod = threading.Event()
+    global evWait
+    evWait = threading.Event()
+    global lstKbrd
+    ''' listener
     global listener
     listener = Listener(
         on_press=on_press
         )
 
     listener.start()
+    '''
+    lstKbrd = threading.Thread(target=lstKey, daemon=True) # daemon True: autó leáll ha a főprocess leáll.
+    lstKbrd.start()
     pass
 
 # Fő program blokk
@@ -625,7 +663,7 @@ def main_process():
     #endregion
 
     #sStop=False
-    tBegin="Not Running"
+    #tBegin="Not Running"
     tEnd="Finished" # Nem biztos, hogy ez a szöveg!
 
     
@@ -648,16 +686,16 @@ def main_process():
     while not sStop:
         # logolás
         # Kell az aktuális idő
-        jTime=datetime.now()
+        #jTime=datetime.now()
         # és mért adat, mely akár 10 másodpercig is várhat
         vSV=getAktVal()
 
-        #region DBG vSV.pr
+        ''' DBG vSV.pr
         if isinstance(vSV, cLog):
             print(f" 👓︎ Figyelt: {vSV.TimeStamp.__format__("%y%m%d_%H%M%S")} Akt: {vSV.Akt} Full: {vSV.length}")
         else:
-            print(f" 👓︎ Figyelt:  {vSV}") #,vSV)
-        #endregion
+            print(f" 👓︎ Figyelt:  -{vSV}-") #,vSV)
+        '''
 
         ''' removed lines TBegin
         if vSV==tBegin: # még nem indult el. Kell alapozni?
@@ -702,11 +740,11 @@ def main_process():
                     # illetve logolni, hogy elkezdtük...
                     # akkor most itt, vagy vSV.Akt=0 a kezdés?
                     # DBG pr
-                    print("Nincs előző vSV")                    
+                    #DGB print("Nincs előző vSV")                    
                     vFigyel=0 # nagyon figyeljünk, mikor jön következő érték!
                     print(f"\nSzint: {vFigyel}\nCh: {lFigyelő[vFigyel].check} Pr: {lFigyelő[vFigyel].period} Ln: {lFigyelő[vFigyel].length}")
                     if vSV.Akt==0: # nem csak hogy van adat, de ez az nulladik szektor.
-                        print("0. sector!") #Dbg
+                        #DBG print("0. sector!") #Dbg
                         
                         v_TimeSt=vSV.TimeStamp # Az kezddet időpontja
                         iTime=v_TimeSt # a periódus kezdeti idejét beállítjuk
@@ -729,7 +767,7 @@ def main_process():
                     #DBG print("Van előző vSV")
                     #DBG print("TS",v_TimeSt)
                     dcSV:cCalc=calcTimes(vSV,vSVe,v_TimeSt)
-                    print(f" 🧐➗ calc: %: {dcSV.Percent:.1f} eddig: {dcSV.ElapsedTime} hátra:{dcSV.ExpectedTime} Sebesség:{dcSV.SectorsPTime:.2f}")
+                    print(f" 🧐➗ calc: %: {dcSV.PercentS} eddig: {dcSV.ElapsedTime} hátra:{dcSV.ExpectedTime} Sebesség:{dcSV.SectorsPTime:.2f}")
                     #vTE=vSV.TimeStamp-v_TimeSt # Eltelt idő
                     #vDT=vSV.TimeStamp-vSVe.TimeStamp
                     #vDS=vSV.Akt-vSVe.Akt
@@ -748,12 +786,13 @@ def main_process():
                     if vHtr<=0: # ha lejárt, akkor logolunk
                         print(f"\nlog: TS: {vSV.TimeStamp:%y-%m-%d %H:%M:%S.%f} Akt.: {vSV.Akt:_} Telj.: {vSV.length:_}\n")
                         vHtr=lFigyelő[vFigyel].period
-                        iTime=datetime.now()
-                        # vagy v_TimeSt-tól számított periódus idő mostanig
+                        iTime=datetime.now() #Nem fix periódusonként, hanem aktuális időtől nézzük.
+                        ''' vagy v_TimeSt-tól számított periódus idő mostanig
                         # iTime=v_TimeSt+timedelta(seconds=(datetime.now()-v_TimeSt).total_seconds()//vHtr*vHtr)
+                        '''
                         # vagy éjféltől számított
                         #iTime=timedelta(seconds=((n:=datetime.now())-(m:=n.replace(hour=0, minute=0,second=0,microsecond=0))).total_seconds()//vHtr*vHtr)+m
-                        '''
+                        ''' Éjféltől
                         n=datetime.now() # Most
                         m=n.replace(hour=0, minute=0,second=0,microsecond=0) # éjfél
                         iTime=m+timedelta(seconds=((n-m).total_seconds()//vHtr*vHtr)) # éjfél + másodpercek perióduskezdetig
@@ -761,12 +800,13 @@ def main_process():
                         pass # periódus lejárt
 
 
-
+                    ''' DBG Várakozás
                     print(f"Várakozás: {min(
                         lFigyelő[vFigyel].check # ellenörző idő
                         ,vHtr)}") # Periódus időig hátra levő idő
+                    '''
                     if vHtr>0.1: # csak akkor várjunk, ha van mit várni
-                        if evPeriod.wait(timeout=min(
+                        if evWait.wait(timeout=min(
 
                             lFigyelő[vFigyel].check # ellenörző idő
                             ,vHtr # Periódus időig hátra levő idő
@@ -804,7 +844,12 @@ if __name__ == "__main__":
         init()
         main_process()
     finally:
-        if "listener" in locals():
+        ''' if "listener" in locals():
             listener.stop() # pyright: ignore[reportAttributeAccessIssue, reportUnboundVariable]
+        '''
+        sStop=1
+        evWait.set()
+        if isinstance(lstKbrd,threading.Thread):
+            lstKbrd.join(timeout=1)
         time.sleep(1)
 

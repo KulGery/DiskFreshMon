@@ -44,3 +44,18 @@ Application tested. Result True
     2. started DiskFresh process Ok monitoring started with all time.. Log appeared... Ok! Correction successful!
     3. after a short time, step period to longer wait. Ok!
 
+Tesztelni kellene azt is, hogy a végén kiírja-e a 100%-ot, illetve az aktuális, és teljes méret azonos lessz-e.
+
+Illetve a leállítást is.
+
+Test_260205_01_04
+2026.02.05 15:50
+Applicatin test...
+
+1. run with disk & app: Ok
+2. Start process: Ok
+3. Monitoring percent has no % sign after number, and not enough deep... need 2 digit after point. 
+    In this case 0.01%: 0.7s if 2 hours the whole process. But we have 20 hours process too (7s: 0.01%).
+Test Failed!!
+The process stopped when I pressed button on other application
+Must to use an inside keyboard listener.
