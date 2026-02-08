@@ -93,7 +93,6 @@ lFigyelő=[oFigyel(0,0,2) # legelején, legvégén mindent mérjünk!
             ]
 lFigyelőc=len(lFigyelő) #Figyelő lista darabszáma
 vFigyel=0 # 0 az első érték
-print(f"\nSzint: {vFigyel}\nCh: {lFigyelő[vFigyel].check} Pr: {lFigyelő[vFigyel].period} Ln: {lFigyelő[vFigyel].length}")
 # Nagyon fontos! a pause, az
 #  vagy 0,1-s onként fut de végig
 #   (ez óránkénti naplózásnál igen felesleges 36000 UI lekérés és számolás)
@@ -171,7 +170,10 @@ class cCalc:
         return self.DeltaTimeu.total_seconds()
     @property
     def PercentS(self) -> str:
-        return (f"{self.Percent*100}%")
+        return (f"{self.Percent*100:.3g}%")
+
+
+sStop:bool=False
 
 #listener: Listener
 
@@ -265,22 +267,25 @@ def gDiskProps():
         #iMaxLSz=0
         rDisk=cDisk()        
         for PDisk in MSFT_PDs:
-            # print('Fnd:', PDisk)
+            #print('Fnd:', PDisk) #DBG
             #v_PD_Name=PDisk.FriendlyName
 
             sDrvID=getattr(PDisk,'DeviceID', None)
+            #print("DevID",sDrvID) # DBG
             if sDrvID is None: continue
 
-            DDs=WMIcm2.Win32_DiskDrive(Index=sDrvID)
+            DDs=WMIcm2.Win32_DiskDrive(Index=sDrvID)            
             if not DDs: continue
             DD=DDs[0] # Feltételezhetően csak egy van
-            
+            #print("DD",DD) #DBG
             for DP in DD.associators(wmi_result_class="Win32_DiskPartition"):
                 #if iMaxSz<DP.Size:
                 #    iMaxSz=DP.Size
+                #print("DP",DP) DBG
                 for DL in DP.associators(wmi_result_class="Win32_LogicalDisk"):
+                    #print("DL",DL) #DBG
                     if rDisk.Size<int(DL.Size):
-                        rDisk.Size=DL.Size
+                        rDisk.Size=int(DL.Size)
                         rDisk.Free=DL.FreeSpace
                         rDisk.ID=DL.VolumeName
                         rDisk.Drive=DL.Caption
@@ -579,9 +584,11 @@ def init():
     listener = Listener(
         on_press=on_press
         )
-
+    
     listener.start()
     '''
+    print(f"\nSzint: {vFigyel}\nCh: {lFigyelő[vFigyel].check} Pr: {lFigyelő[vFigyel].period} Ln: {lFigyelő[vFigyel].length}")
+
     lstKbrd = threading.Thread(target=lstKey, daemon=True) # daemon True: autó leáll ha a főprocess leáll.
     lstKbrd.start()
     pass
@@ -589,6 +596,8 @@ def init():
 # Fő program blokk
 
 def main_process():
+    global sStop
+
     vDP=gDiskProps()
     #vDP="Test"
 
@@ -664,7 +673,7 @@ def main_process():
 
     #sStop=False
     #tBegin="Not Running"
-    tEnd="Finished" # Nem biztos, hogy ez a szöveg!
+    tEnd=" " # Nem biztos, hogy ez a szöveg!
 
     
     global vFigyel
@@ -696,6 +705,11 @@ def main_process():
         else:
             print(f" 👓︎ Figyelt:  -{vSV}-") #,vSV)
         '''
+        ''' Utolsó utáni adat
+        if vSVe.Akt>-1 and not isinstance(vSV,cLog): # az utolsó adat után írjuk ki milyen adatt érkezett!
+            print(f" 👓︎ Figyelt:  -{vSV}-") #,vSV)
+            pass
+        '''
 
         ''' removed lines TBegin
         if vSV==tBegin: # még nem indult el. Kell alapozni?
@@ -707,6 +721,10 @@ def main_process():
         '''
         if vSV==tEnd: # elkészült, de teljesen
             #hmm úgy tűnik, a végén üres szöveget ad a státuszsor
+            if vSVe.Akt>0:
+                print(f"\nlog: Last TS: {vSVe.TimeStamp:%y-%m-%d %H:%M:%S.%f} Akt.: {vSVe.Akt:_} Telj.: {vSVe.length:_}\n")
+            sStop=True
+            vSVe=cLog()
             break
         if isinstance(vSV, cLog): # adat!
             #if vStart: # léptetni az állapotjelzőt
@@ -745,10 +763,10 @@ def main_process():
                     print(f"\nSzint: {vFigyel}\nCh: {lFigyelő[vFigyel].check} Pr: {lFigyelő[vFigyel].period} Ln: {lFigyelő[vFigyel].length}")
                     if vSV.Akt==0: # nem csak hogy van adat, de ez az nulladik szektor.
                         #DBG print("0. sector!") #Dbg
-                        
+                        print(f"\nlog: First TS: {vSV.TimeStamp:%y-%m-%d %H:%M:%S.%f} Akt.: {vSV.Akt:_} Telj.: {vSV.length:_}\n")
                         v_TimeSt=vSV.TimeStamp # Az kezddet időpontja
                         iTime=v_TimeSt # a periódus kezdeti idejét beállítjuk
-                        print("Kezdés: ",v_TimeSt) #Dbg
+                        #print("Kezdés: ",v_TimeSt) #Dbg
                         # ekkor még nincs előző adat!
                         # logolást ne felejtsük!
                         pass # 0. szektor!
@@ -840,6 +858,7 @@ def main_process():
 # ==============================================================================
 
 if __name__ == "__main__":
+    print(f"Monitoring script started: {datetime.now():%y-%m-%d %H:%M:%S.%f}\n")
     try:
         init()
         main_process()
@@ -847,7 +866,7 @@ if __name__ == "__main__":
         ''' if "listener" in locals():
             listener.stop() # pyright: ignore[reportAttributeAccessIssue, reportUnboundVariable]
         '''
-        sStop=1
+        sStop=True
         evWait.set()
         if isinstance(lstKbrd,threading.Thread):
             lstKbrd.join(timeout=1)
