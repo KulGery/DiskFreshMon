@@ -166,7 +166,7 @@ Test_260208_181917.5_01_06
 6. Stopped the script: Ok.
 7. Win32 Error: Failed, appeared.
 
-
+Last defect is the Win32 Error.
 
 
 
